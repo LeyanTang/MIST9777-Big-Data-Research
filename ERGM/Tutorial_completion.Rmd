@@ -1,0 +1,117 @@
+---
+title: "ERGM"
+output: html_document
+date: "2025-02-09"
+---
+
+```{r message=FALSE}
+library(networkdata)
+```
+
+```{r message=FALSE}
+library(statnet)
+load("bott.RData")
+summary(bott)
+```
+```{r message=FALSE}
+bott
+```
+```{r message=FALSE}
+plot(bott[[1]])
+```
+```{r message=FALSE}
+plot(bott[[2]])
+```
+
+```{r message=FALSE}
+plot(bott[[3]])
+```
+
+```{r message=FALSE}
+plot(bott[[4]])
+```
+```{r message=FALSE}
+plot(bott[[5]])
+```
+
+```{r message=FALSE}
+summary(bott[[4]]~edges)
+```
+
+```{r message=FALSE}
+bottmodel.01 <- ergm(bott[[4]]~edges)
+summary(bottmodel.01)
+```
+
+```{r message=FALSE}
+summary(bott[[4]]~edges+triangle)
+```
+
+```{r message=FALSE}
+bottmodel.02 <- ergm(bott[[4]]~edges+triangle)
+summary(bottmodel.02)
+```
+```{r message=FALSE}
+age <- bott[[4]] %v% "age.month"
+summary(age)
+```
+
+```{r message=FALSE}
+plot(bott[[4]], vertex.cex=age/24)
+```
+
+```{r message=FALSE}
+summary(bott[[4]]~edges+nodecov('age.month'))
+```
+
+```{r message=FALSE}
+bottmodel.03 <- ergm(bott[[4]]~edges+nodecov('age.month'))
+summary(bottmodel.03)
+```
+
+```{r message=FALSE}
+bottmodel.03b <- ergm(bott[[4]]~edges+nodeicov('age.month'))
+summary(bottmodel.03b)
+```
+
+```{r message=FALSE}
+bottmodel.03c <- ergm(bott[[4]]~edges+absdiff('age.month'))
+summary(bottmodel.03c)
+```
+
+```{r message=FALSE}
+bottmodel.04 <- ergm(bott[[4]]~edges+mutual)
+summary(bottmodel.04)
+```
+
+```{r message=FALSE}
+bottmodel.05 <- ergm(bott[[4]]~edges+edgecov(bott[[1]]))
+summary(bottmodel.05)
+```
+```{r message=FALSE}
+agediff <- abs(outer(bott[[4]]%v%"age.month",bott[[4]]%v%"age.month","-"))
+```
+
+```{r message=FALSE}
+agediff <- abs(outer(bott[[4]]%v%"age.month",bott[[4]]%v%"age.month","-"))
+bottmodel.06 <- ergm(bott[[4]]~edges+edgecov(bott[[1]])+edgecov(agediff))
+summary(bottmodel.06)
+```
+
+```{r message=FALSE}
+bottmodel.06.gof <- gof(bottmodel.06 ~ model + esp + distance)
+bottmodel.06.gof
+```
+
+```{r message=FALSE}
+plot(bottmodel.06.gof)
+```
+
+```{r message=FALSE}
+mcmc.diagnostics(bottmodel.04)
+```
+
+```{r message=FALSE}
+#bottmodel.07 <- ergm(bott[[4]]~edges+nodeicov('age.month')+edgecov(bott[[1]])+edgecov(agediff)+gwesp(1,fixed=FALSE))
+#summary(bottmodel.07)
+```
