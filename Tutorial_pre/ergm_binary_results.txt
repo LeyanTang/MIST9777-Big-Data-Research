@@ -1,0 +1,25 @@
+Binary ERGM Results with Triadic Closure
+
+Call:
+ergm::ergm(formula = net_ergm ~ edges + mutual + absdiff("avg_bot_ratio") + 
+    absdiff("project_count") + nodeicov("avg_bot_ratio") + nodeocov("avg_bot_ratio") + 
+    gwesp(0.5, fixed = TRUE), control = ergm::control.ergm(MCMLE.maxit = 25, 
+    MCMC.samplesize = 2500, MCMC.burnin = 2500))
+
+Monte Carlo Maximum Likelihood Results:
+
+                       Estimate Std. Error MCMC %  z value Pr(>|z|)    
+edges                  -5.89862    0.05578      0 -105.741  < 1e-04 ***
+mutual                  0.01944    0.34245      0    0.057  0.95473    
+absdiff.avg_bot_ratio  -0.74255    0.07496      0   -9.906  < 1e-04 ***
+absdiff.project_count   0.88796    0.02878      0   30.854  < 1e-04 ***
+nodeicov.avg_bot_ratio  0.09701    0.06497      0    1.493  0.13539    
+nodeocov.avg_bot_ratio  0.20709    0.06625      0    3.126  0.00177 ** 
+gwesp.OTP.fixed.0.5    -0.66108    0.22222      0   -2.975  0.00293 ** 
+---
+Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+
+     Null Deviance: 617672  on 445556  degrees of freedom
+ Residual Deviance:  24064  on 445549  degrees of freedom
+ 
+AIC: 24078  BIC: 24155  (Smaller is better. MC Std. Err. = 0.2457)

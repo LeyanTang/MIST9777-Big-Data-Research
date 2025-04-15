@@ -1,0 +1,1013 @@
+---
+title: "Weaving the Web: The Effect of Bots on Developer Cross-Project Issue Participation"
+author: "Leyan Tang"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    number_sections: true
+    theme: flatly
+    highlight: tango
+    css: custom.css
+    code_folding: show
+    df_print: paged
+---
+
+```{css, echo=FALSE}
+/* You can save this as custom.css in the same folder as your Rmd file */
+body {
+  font-family: 'Helvetica Neue', Arial, sans-serif;
+  line-height: 1.8;
+  color: #333;
+}
+
+h1, h2, h3, h4 {
+  color: #2c3e50;
+  font-weight: 600;
+}
+
+h1 {
+  border-bottom: 2px solid #3498db;
+  padding-bottom: 10px;
+}
+
+h2 {
+  border-bottom: 1px solid #3498db;
+  padding-bottom: 5px;
+  margin-top: 30px;
+}
+
+.note {
+  background-color: #e8f4f8;
+  border-left: 4px solid #3498db;
+  padding: 10px 15px;
+  margin: 20px 0;
+  border-radius: 3px;
+}
+
+.warning {
+  background-color: #fdebd0;
+  border-left: 4px solid #f39c12;
+  padding: 10px 15px;
+  margin: 20px 0;
+  border-radius: 3px;
+}
+
+.formula {
+  background-color: #f8f9fa;
+  padding: 10px;
+  margin: 15px 0;
+  border-radius: 4px;
+  font-style: italic;
+}
+
+.abstract {
+  background-color: #f9f9f9;
+  padding: 15px;
+  margin: 20px 0;
+  border-radius: 5px;
+  border-left: 4px solid #2c3e50;
+  font-style: italic;
+}
+
+pre {
+  border-radius: 4px;
+  font-size: 90%;
+}
+
+.figure {
+  text-align: center;
+  margin: 20px 0;
+}
+
+.caption {
+  color: #666;
+  font-style: italic;
+  font-size: 0.9em;
+  text-align: center;
+  margin-top: 5px;
+}
+
+/* Custom table styling */
+table {
+  width: 100%;
+  margin-bottom: 20px;
+  border-collapse: collapse;
+}
+
+th {
+  background-color: #3498db;
+  color: white;
+  text-align: left;
+  padding: 10px;
+}
+
+td {
+  padding: 8px;
+  border-bottom: 1px solid #ddd;
+}
+
+tr:nth-child(even) {
+  background-color: #f2f2f2;
+}
+
+tr:hover {
+  background-color: #e5e5e5;
+}
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE,
+                      fig.width = 10, fig.height = 6, dpi = 120, 
+                      out.width = "100%", cache = TRUE)
+```
+
+<div class="abstract">
+The open source software (OSS) model has become a strong alternative to proprietary software development models. More than 90 percent of Fortune 500 companies now use open-source products, highlighting its importance to the broader economy. As OSS communities expand, bots are increasingly employed to streamline workflows and enhance collaboration. This study investigates how bots influence developer cross-project participation in issue resolution within open source communities, using a network approach to analyze collaboration patterns across multiple Apache projects.
+</div>
+
+# Introduction
+
+The open source software (OSS) model thrives on decentralized developer collaboration rather than traditional hierarchical management structures. The success of OSS projects relies primarily on maintaining developers' sustained participation and promoting effective collaboration patterns. Social coding platforms like GitHub facilitate transparent and effective collaboration through features like issue management systems.
+
+OSS projects require developers with various expertise to virtually collaborate to achieve project success. However, developer collaboration has been a less focused stream of literature compared with the more established research on individual motivations and contributions. While prior research has examined leader-follower ties, prior social ties of co-membership, and dynamic collaboration around major product releases, how developers effectively collaborate specifically within issue management systems remains unclear.
+
+As OSS communities expand, the growing volume of open issues poses a significant challenge for developers to maintain timely solutions. To address these challenges, OSS projects increasingly leverage automation tools ("bots") to streamline workflows and enhance collaboration. This study addresses the critical gap by investigating:
+
+<div class="note">
+**Research Question:** How do bots influence developer cross-project participation in issue resolution within open source software projects?
+</div>
+
+# Setting Up the Environment
+
+Let's start by loading the necessary packages for our analysis.
+
+```{r packages}
+# Load the packages
+library(ergm)       # For fitting ERGMs
+library(network)    # For network data structures
+library(sna)        # For network visualization and analysis
+library(intergraph) # For converting between network classes
+library(igraph)     # For alternative network representation
+library(ergm.count)  # For valued ERGMs with count data
+library(RColorBrewer) # For color palettes
+library(ggplot2)    # For advanced plotting
+library(dplyr)      # For data manipulation
+library(knitr)      # For table formatting
+library(visNetwork) # For interactive network visualization
+library(plotly)     # For interactive plots
+library(DT)         # For interactive tables
+library(networkD3)  # For D3 network visualizations
+library(tidyr)      # For data reshaping
+library(viridis)    # For better color palettes
+library(hrbrthemes) # For better ggplot themes
+library(scales)     # For scale formatting
+
+# Set a seed for reproducibility
+set.seed(42)
+
+# Custom theme for ggplot
+theme_set(
+  theme_ipsum_rc() + 
+  theme(
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    axis.title = element_text(size = 11),
+    legend.title = element_text(size = 11),
+    legend.text = element_text(size = 10)
+  )
+)
+```
+
+# Understanding the GitHub Network Data
+
+Our dataset represents a directed network of GitHub contributors across multiple Apache projects. Each node represents a contributor, and directed edges indicate interactions between contributors across projects.
+
+## Data Description
+
+The network data consists of:
+
+- **Nodes:** GitHub contributors 
+- **Edges:** Directed interactions between contributors
+- **Node attributes:** 
+  - home_project: The primary Apache project associated with the contributor
+  - project_count: Number of different projects the contributor is involved in
+  - issue_count: Number of issues the contributor is involved with
+  - avg_bot_ratio: The average proportion of bot activities in the contributor's home project
+- **Edge attributes:**
+  - weight: Frequency of interactions
+  - bot_event_count: Number of bot-related events in the interactions
+
+## Loading the Network Data
+
+```{r load_data}
+nodes_original <- read.csv("nodes.csv", stringsAsFactors = FALSE)
+edges_original <- read.csv("edges.csv", stringsAsFactors = FALSE)
+
+nodes_original$avg_bot_ratio <- as.numeric(nodes_original$avg_bot_ratio)
+if(!"source" %in% colnames(edges_original) && "from" %in% colnames(edges_original)) {
+  colnames(edges_original)[colnames(edges_original) == "from"] <- "source"
+}
+if(!"target" %in% colnames(edges_original) && "to" %in% colnames(edges_original)) {
+  colnames(edges_original)[colnames(edges_original) == "to"] <- "target"
+}
+
+if(!("source" %in% colnames(edges_original) && "target" %in% colnames(edges_original))) {
+  stop("Edges dataframe must have 'source' and 'target' columns")
+}
+
+g <- igraph::graph_from_data_frame(d = edges_original, vertices = nodes_original, directed = TRUE)
+
+cat("Original graph edges count:", igraph::ecount(g), "\n")
+if(igraph::ecount(g) == 0) {
+  stop("Original graph has 0 edges. Check your edges data frame.")
+}
+
+components_result <- igraph::components(g)
+main_component <- which.max(components_result$csize)
+vertices_in_main <- which(components_result$membership == main_component)
+g_main <- igraph::induced_subgraph(g, vertices_in_main)
+cat("Main component edges count:", igraph::ecount(g_main), "\n")
+
+# Further filter to remove nodes with degree <= 1
+nodes_to_keep <- which(igraph::degree(g_main, mode = "all") > 1)
+g_filtered <- igraph::induced_subgraph(g_main, nodes_to_keep)
+nodes <- igraph::as_data_frame(g_filtered, what = "vertices")
+edges <- igraph::as_data_frame(g_filtered, what = "edges")
+
+cat("After filtering (largest component, degree > 1):\n")
+cat("Node count:", nrow(nodes), "\n")
+cat("Edge count:", nrow(edges), "\n")
+
+node_summary <- data.frame(
+  Metric = c("Number of Contributors", 
+             "Number of Home Projects", 
+             "Avg. Project Count per Contributor", 
+             "Avg. Issue Count per Contributor",
+             "Avg. Bot Ratio",
+             "High Bot Exposure (%)"),
+  Value = c(nrow(nodes),
+            length(unique(nodes$home_project)),
+            mean(nodes$project_count),
+            mean(nodes$issue_count),
+            mean(nodes$avg_bot_ratio),
+            mean(nodes$bot_group) * 100)
+)
+
+if(nrow(edges) > 0) {
+  edge_summary <- data.frame(
+    Metric = c("Number of Cross-Project Interactions",
+               "Avg. Interaction Weight",
+               "Max Interaction Weight",
+               "Network Density"),
+    Value = c(nrow(edges),
+              mean(edges$weight),
+              max(edges$weight),
+              nrow(edges)/(nrow(nodes)*(nrow(nodes)-1)))
+  )
+  
+  kable(node_summary, caption = "Summary of Node Attributes", 
+        digits = 2, format.args = list(big.mark = ","))
+  
+  kable(edge_summary, caption = "Summary of Edge Attributes", 
+        digits = 4, format.args = list(big.mark = ","))
+} else {
+  cat("WARNING: No edges in the filtered network!\n")
+  cat("Check if your filtering criteria are too strict or if there's an issue with the edges data.\n")
+}
+
+cat("\nPreview of nodes data:\n")
+print(head(nodes, 10))
+cat("\nPreview of edges data:\n")
+print(head(edges, 10))
+```
+
+## Data Overview
+
+```{r data_overview}
+# Create a summary data frame
+node_summary <- data.frame(
+  Metric = c("Number of Contributors", 
+             "Number of Home Projects", 
+             "Avg. Project Count per Contributor", 
+             "Avg. Issue Count per Contributor",
+             "Avg. Bot Ratio"),
+  Value = c(nrow(nodes),
+            length(unique(nodes$home_project)),
+            mean(nodes$project_count),
+            mean(nodes$issue_count),
+            mean(nodes$avg_bot_ratio))
+)
+
+edge_summary <- data.frame(
+  Metric = c("Number of Cross-Project Interactions",
+             "Avg. Interaction Weight",
+             "Avg. Bot Event Count per Interaction",
+             "Max Interaction Weight",
+             "Network Density (Approx.)"),
+  Value = c(nrow(edges),
+            mean(edges$weight),
+            mean(edges$bot_event_count),
+            max(edges$weight),
+            nrow(edges)/(nrow(nodes)*(nrow(nodes)-1)))
+)
+
+# Display the summary tables
+kable(node_summary, caption = "Summary of Node Attributes", 
+      digits = 2, format.args = list(big.mark = ","))
+
+kable(edge_summary, caption = "Summary of Edge Attributes", 
+      digits = 4, format.args = list(big.mark = ","))
+```
+
+## Exploring Data Distributions
+
+Let's visualize the distributions of key node and edge attributes.
+
+```{r node_distributions, fig.height=8}
+filtered_nodes <- nodes %>%
+  filter(issue_count < quantile(issue_count, 0.95))
+node_dist_data_filtered <- filtered_nodes %>%
+  select(issue_count, project_count, avg_bot_ratio) %>%
+  gather(key = "attribute", value = "value")
+
+# Plot distributions of node attributes with better binning for issue_count
+p1_improved <- ggplot(node_dist_data_filtered, aes(x = value)) +
+  geom_histogram(aes(fill = attribute), bins = 30, alpha = 0.8) +
+  facet_wrap(~ attribute, scales = "free", ncol = 1) +
+  scale_fill_viridis_d() +
+  scale_x_continuous(labels = scales::comma_format()) +
+  labs(title = "Distributions of Contributor Attributes (Outliers Filtered)",
+       x = "Value", y = "Count") +
+  theme(legend.position = "none")
+
+ggplotly(p1_improved)
+
+p_issue <- ggplot(nodes, aes(x = issue_count)) +
+  geom_histogram(fill = "#440154", bins = 50, alpha = 0.8) +
+  scale_x_log10(labels = scales::comma_format()) +  # Log scale to better see distribution
+  labs(title = "Distribution of Issue Count (Log Scale)",
+       x = "Issue Count (log scale)", y = "Number of Contributors") +
+  theme_ipsum_rc()
+
+ggplotly(p_issue)
+```
+
+
+```{r project_distribution, fig.height=5}
+# Get distribution of home projects
+project_counts <- nodes %>%
+  count(home_project) %>%
+  arrange(desc(n)) %>%
+  mutate(home_project = factor(home_project, levels = home_project))
+
+# Plot the project distribution
+p3 <- ggplot(project_counts, aes(x = home_project, y = n, fill = home_project)) +
+  geom_bar(stat = "identity") +
+  scale_fill_viridis_d() +
+  labs(title = "Distribution of Contributors by Home Project",
+       x = "Home Project", y = "Number of Contributors") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  guides(fill = FALSE)
+
+# Create an interactive version
+ggplotly(p3)
+```
+
+## Bot Exposure Analysis
+
+Let's analyze the distribution of bot exposure among contributors.
+
+```{r bot_exposure, fig.height=6}
+# Create bins for bot ratio
+nodes$bot_exposure_level <- cut(nodes$avg_bot_ratio, 
+                               breaks = c(0, 0.2, 0.4, 0.6, 0.8, 1),
+                               labels = c("Very Low (0-20%)", 
+                                         "Low (20-40%)", 
+                                         "Medium (40-60%)", 
+                                         "High (60-80%)", 
+                                         "Very High (80-100%)"),
+                               include.lowest = TRUE)
+
+# Count contributors by bot exposure level
+bot_exposure_counts <- nodes %>%
+  count(bot_exposure_level) %>%
+  mutate(percentage = n / sum(n) * 100)
+
+# Plot bot exposure distribution
+p4 <- ggplot(bot_exposure_counts, aes(x = bot_exposure_level, y = n, fill = bot_exposure_level)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = paste0(round(percentage, 1), "%")), 
+            position = position_dodge(width = 0.9), 
+            vjust = -0.5) +
+  scale_fill_viridis_d() +
+  labs(title = "Distribution of Contributors by Bot Exposure Level",
+       subtitle = "Based on avg_bot_ratio in home project",
+       x = "Bot Exposure Level", 
+       y = "Number of Contributors",
+       fill = "Bot Exposure Level") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Create an interactive version
+ggplotly(p4)
+```
+
+```{r bot_exposure_by_project, fig.height=6}
+# Analyze bot exposure by project
+project_bot_exposure <- nodes %>%
+  group_by(home_project) %>%
+  summarize(avg_bot_exposure = mean(avg_bot_ratio),
+            median_bot_exposure = median(avg_bot_ratio),
+            min_bot_exposure = min(avg_bot_ratio),
+            max_bot_exposure = max(avg_bot_ratio),
+            count = n()) %>%
+  arrange(desc(avg_bot_exposure))
+
+# Plot average bot exposure by project
+p5 <- ggplot(project_bot_exposure, aes(x = reorder(home_project, avg_bot_exposure), 
+                                 y = avg_bot_exposure, 
+                                 fill = avg_bot_exposure)) +
+  geom_bar(stat = "identity") +
+  geom_errorbar(aes(ymin = min_bot_exposure, ymax = max_bot_exposure), width = 0.2) +
+  scale_fill_viridis_c() +
+  labs(title = "Average Bot Exposure by Home Project",
+       subtitle = "Error bars show min and max bot exposure values",
+       x = "Home Project", 
+       y = "Average Bot Exposure (avg_bot_ratio)",
+       fill = "Avg Bot Exposure") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+ggplotly(p5)
+```
+
+# Creating the Network Object
+
+Now let's convert our data into a network object for network analysis.
+
+```{r create_network}
+# Create a directed igraph object first
+g <- graph_from_data_frame(edges, directed = TRUE, vertices = nodes)
+
+# Convert to a network object for statnet
+net <- asNetwork(g)
+
+node_order <- match(network.vertex.names(net), nodes$id)
+if (any(is.na(node_order))) {
+  warning("Some node IDs couldn't be matched - check your node and edge data")
+}
+
+for (attr in colnames(nodes)) {
+  if (attr != "id") {
+    # Ensure attribute values are in correct order and type
+    try({
+      net %v% attr <- nodes[node_order, attr]
+    }, silent = TRUE)
+  }
+}
+
+try({
+  net %e% "weight" <- edges$weight
+  net %e% "bot_event_count" <- edges$bot_event_count
+}, silent = TRUE)
+
+# Basic network information
+network_info <- data.frame(
+  Metric = c("Network Size (Nodes)", 
+             "Edge Count", 
+             "Network Density",
+             "Reciprocity",
+             "Transitivity"),
+  Value = c(network.size(net),
+            network.edgecount(net),
+            network.density(net),
+            grecip(net, measure = "dyadic"),
+            gtrans(net))
+)
+
+kable(network_info, caption = "Basic Network Metrics", digits = 4)
+```
+
+## Degree Distributions
+
+```{r degree_correlation, fig.height=6}
+nodes$id <- igraph::V(g_filtered)$name
+
+# Calculate degrees
+indegree_dist <- igraph::degree(g_filtered, mode = "in")
+outdegree_dist <- igraph::degree(g_filtered, mode = "out")
+degree_dist <- igraph::degree(g_filtered, mode = "total")
+
+# Create data frame for plotting
+degree_df <- data.frame(
+  ID = nodes$id,
+  InDegree = indegree_dist[nodes$id],
+  OutDegree = outdegree_dist[nodes$id],
+  Degree = degree_dist[nodes$id],
+  BotRatio = nodes$avg_bot_ratio,
+  Project = nodes$home_project
+)
+
+# Plot
+p8 <- ggplot(degree_df, aes(x = InDegree, y = OutDegree, color = BotRatio, size = Degree)) +
+  geom_point(alpha = 0.7) +
+  scale_color_viridis_c() +
+  scale_size_continuous(range = c(1, 8)) +
+  labs(title = "In-Degree vs Out-Degree Correlation",
+       subtitle = paste("Correlation:", round(cor(degree_df$InDegree, degree_df$OutDegree), 3)),
+       x = "In-Degree", 
+       y = "Out-Degree",
+       color = "Bot Ratio",
+       size = "Total Degree") +
+  theme(legend.position = "right")
+
+ggplotly(p8)
+
+```
+
+```{r degree_bot_correlation, fig.height=6}
+degree_bot_df <- degree_df %>%
+  select(InDegree, OutDegree, Degree, BotRatio, Project) %>%
+  gather(key = "DegreeType", value = "DegreeValue", -BotRatio, -Project)
+
+p9 <- ggplot(degree_bot_df, aes(x = BotRatio, y = DegreeValue, color = DegreeType)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm", se = TRUE) +
+  facet_wrap(~ DegreeType, scales = "free_y", ncol = 1) +
+  scale_color_viridis_d() +
+  labs(title = "Relationship Between Bot Ratio and Degree Metrics",
+       x = "Bot Ratio", 
+       y = "Degree Value",
+       color = "Degree Type")
+
+ggplotly(p9) %>% 
+  layout(height = 700)
+```
+
+# Network Visualization
+
+Let's visualize our contributor network to better understand its structure.
+
+## Static Network Visualization
+
+```{r bot_network, fig.height=10, fig.width=12}
+# Ensure consistent vertex names and matching
+V(g_filtered)$name <- V(g_filtered)$name
+nodes$id <- V(g_filtered)$name
+
+# Convert igraph to network object
+net <- asNetwork(g_filtered)
+node_order <- match(network.vertex.names(net), nodes$id)
+
+# Safely assign vertex attributes
+for (attr in colnames(nodes)) {
+  if (attr != "id") {
+    attr_values <- nodes[[attr]]
+    if (is.atomic(attr_values) && length(attr_values) == length(node_order)) {
+      tryCatch({
+        net %v% attr <- attr_values[node_order]
+      }, error = function(e) {
+        warning(paste("Skipping attribute:", attr, "-", e$message))
+      })
+    }
+  }
+}
+
+# Assign edge attributes safely
+if (!is.null(edges$weight)) {
+  net %e% "weight" <- edges$weight
+}
+if (!is.null(edges$bot_event_count)) {
+  net %e% "bot_event_count" <- edges$bot_event_count
+}
+
+# Color scale for avg_bot_ratio
+bot_ratio <- net %v% "avg_bot_ratio"
+bot_ratio[is.na(bot_ratio)] <- 0
+bot_ratio <- pmin(pmax(bot_ratio, 0), 1)
+color_index <- ceiling(bot_ratio * 99) + 1
+bot_color <- viridis::viridis(100)[color_index]
+
+# Node sizes based on degree using sna::degree
+node_sizes <- sqrt(sna::degree(net, cmode = "freeman")) / 2 + 0.5
+
+# Plot network
+set.seed(42)
+par(mar = c(0, 0, 2, 0))
+gplot(net,
+      vertex.col = bot_color,
+      vertex.cex = node_sizes,
+      edge.col = scales::alpha("gray50", 0.4),
+      edge.lwd = ifelse(!is.null(net %e% "weight"), (net %e% "weight") / 3, 1),
+      main = "GitHub Contributor Network - By Bot Exposure",
+      displaylabels = FALSE,
+      mode = "fruchtermanreingold")
+
+# Add legend
+legend("bottomright", 
+       legend = seq(0, 1, 0.2),
+       fill = viridis::viridis(6),
+       title = "Bot Exposure Ratio",
+       cex = 0.8)
+
+
+```
+
+## Interactive Network Visualization
+
+Let's create an interactive network visualization to better explore the data.
+
+### Bot Exposure Visualization
+
+```{r interactive_network_bot, fig.height=8, fig.width=12}
+# Use the cleaned graph object
+g <- igraph::graph_from_data_frame(edges, directed = TRUE, vertices = nodes)
+
+# Compute degree for sizing
+node_degree <- igraph::degree(g, mode = "total")
+
+# Ensure bot exposure level is character
+nodes$bot_exposure_level <- as.character(nodes$bot_exposure_level)
+
+# Create visNetwork nodes
+vis_nodes_bot <- data.frame(
+  id = nodes$id,
+  label = nodes$id,
+  value = node_degree,
+  group = nodes$bot_exposure_level,
+  title = paste0("<p><b>Contributor:</b> ", nodes$id, "<br>",
+                 "<b>Home Project:</b> ", nodes$home_project, "<br>",
+                 "<b>Bot Ratio:</b> ", round(nodes$avg_bot_ratio, 2), "</p>")
+)
+
+# Create visNetwork edges using the correct column names: 'from' and 'to'
+vis_edges <- data.frame(
+  from = as.character(edges$from),
+  to = as.character(edges$to),
+  value = edges$weight,
+  title = paste0("<p><b>Weight:</b> ", edges$weight, "<br>",
+                 "<b>Bot Events:</b> ", edges$bot_event_count, "</p>")
+)
+
+# Build interactive network
+visNetwork(vis_nodes_bot, vis_edges, width = "100%", height = "600px") %>%
+  visIgraphLayout(layout = "layout_with_fr") %>%
+  visOptions(highlightNearest = list(enabled = TRUE, degree = 1, hover = TRUE),
+             selectedBy = "group") %>%
+  visLegend(width = 0.2, position = "right") %>%
+  visPhysics(stabilization = FALSE) %>%
+  visInteraction(navigationButtons = TRUE, keyboard = TRUE) %>%
+  visLayout(randomSeed = 42)
+
+
+```
+
+# Fitting ERGMs
+
+Now let's fit different ERGM models to understand what factors influence cross-project collaboration ties.
+
+## Model Specification
+
+```{r ergm_models}
+cat("Edge dataframe column names:", paste(colnames(edges_original), collapse=", "), "\n")
+g <- igraph::graph_from_data_frame(d = edges_original, vertices = nodes_original, directed = TRUE)
+
+# Find largest component and filter nodes with degree > 1
+components_result <- igraph::components(g)
+main_component <- which.max(components_result$csize)
+vertices_in_main <- which(components_result$membership == main_component)
+g_main <- igraph::induced_subgraph(g, vertices_in_main)
+g_filtered <- igraph::induced_subgraph(g_main, which(igraph::degree(g_main, mode = "all") > 1))
+
+# Display edge count to verify edges are preserved
+cat("Filtered graph edge count:", igraph::ecount(g_filtered), "\n")
+
+# Convert to network object for ERGM
+net_ergm <- intergraph::asNetwork(g_filtered)
+
+# Manually copy edge weights from the original igraph object
+edge_weights <- igraph::E(g_filtered)$weight
+if(length(edge_weights) > 0) {
+  # Get network edgelist
+  net_edgelist <- network::as.edgelist(net_ergm)
+  # Set the weight attribute
+  for(i in 1:nrow(net_edgelist)) {
+    from_idx <- net_edgelist[i, 1]
+    to_idx <- net_edgelist[i, 2]
+    # Assign weight
+    net_ergm[from_idx, to_idx, "weight"] <- edge_weights[i]
+  }
+}
+
+# --- Model 1: Binary ERGM  ---
+set.seed(123)  # For reproducibility
+
+model_binary <- ergm::ergm(net_ergm ~ 
+                     edges +
+                     mutual + 
+                     absdiff("avg_bot_ratio") +
+                     absdiff("project_count") +
+                     nodeicov("avg_bot_ratio") +
+                     nodeocov("avg_bot_ratio") +
+                     gwesp(0.5, fixed = TRUE),   # Triadic closure - edgewise shared partners
+                   control = ergm::control.ergm(
+                     MCMLE.maxit = 25,
+                     MCMC.samplesize = 2500,
+                     MCMC.burnin = 2500
+                   ))
+
+print(summary(model_binary))
+
+# --- Model 2: Valued ERGM ---
+set.seed(456)  # For reproducibility
+
+model_valued <- ergm::ergm(net_ergm ~ 
+                     sum +                        
+                     mutual +                     
+                     absdiff("avg_bot_ratio") +   
+                     absdiff("project_count") + 
+                     nodeicov("avg_bot_ratio") + 
+                     nodeocov("avg_bot_ratio"),
+                   response = "weight",
+                   reference = ~Poisson,         
+                   control = ergm::control.ergm(
+                     MCMLE.maxit = 25,
+                     MCMC.samplesize = 2500,
+                     MCMC.burnin = 2500
+                   ))
+
+print(summary(model_valued))
+
+# Save results
+# Binary model results
+sink("ergm_binary_results.txt")
+cat("Binary ERGM Results with Triadic Closure\n\n")
+print(summary(model_binary))
+sink()
+
+# Valued model results
+sink("ergm_valued_results.txt")
+cat("Valued ERGM Results (Poisson-reference)\n\n")
+print(summary(model_valued))
+sink()
+```
+
+## Model Results
+
+Let's examine the results of our ERGM models:
+
+```{r model_results}
+extract_coefs <- function(model, model_name = "ERGM") {
+  # Get the raw output as text to extract exact p-values and significance levels
+  output_lines <- capture.output(print(summary(model)))
+  
+  # Find the coefficient table in the output
+  start_line <- grep("Estimate Std\\. Error MCMC % *z value Pr\\(>\\|z\\|\\)", output_lines)[1]
+  end_line <- grep("---", output_lines)[1] - 1
+  
+  # Extract coefficient lines
+  coef_lines <- output_lines[(start_line+1):end_line]
+  
+  # Parse each line to extract term, z value, p value, and significance
+  parsed_coefs <- list()
+  for (i in 1:length(coef_lines)) {
+    # Split the line by whitespace
+    parts <- strsplit(trimws(coef_lines[i]), "\\s+")[[1]]
+    
+    # First part is the term
+    term <- parts[1]
+    
+    # Estimate is the next numeric value
+    estimate <- as.numeric(parts[2])
+    
+    # SE is the next numeric value
+    se <- as.numeric(parts[3])
+    
+    # Skip MCMC % column
+    
+    # z value is the next numeric value
+    z_value <- as.numeric(parts[5])
+    
+    # p value might be in scientific notation or have significance stars
+    # Extract p value and significance separately
+    p_parts <- parts[6:length(parts)]
+    
+    # The first part is the p value
+    p_value <- p_parts[1]
+    
+    # Any remaining parts would be significance stars
+    significance <- ifelse(length(p_parts) > 1, paste(p_parts[2:length(p_parts)], collapse=" "), "")
+    
+    # Store in the list
+    parsed_coefs[[i]] <- list(
+      Term = term,
+      Estimate = estimate,
+      SE = se,
+      Z_value = z_value,
+      P_value = p_value,
+      Significance = significance,
+      Model = model_name
+    )
+  }
+  
+  # Convert list to data frame
+  result <- do.call(rbind, lapply(parsed_coefs, function(x) {
+    data.frame(
+      Term = x$Term,
+      Estimate = x$Estimate,
+      SE = x$SE,
+      Z_value = x$Z_value,
+      P_value = x$P_value,
+      Significance = x$Significance,
+      Model = x$Model,
+      stringsAsFactors = FALSE
+    )
+  }))
+  
+  return(result)
+}
+
+# Extract model results directly from the output
+model1_results <- extract_coefs(model_binary, "ERGM")
+model2_results <- extract_coefs(model_valued, "ERGM")
+
+# Display Binary ERGM results - don't use formatRound for P_value
+datatable(model1_results, 
+          options = list(pageLength = 15, scrollX = TRUE),
+          caption = "ERGM Model 1 Results (Binary Model)") %>%
+  formatRound(columns = c("Estimate", "SE", "Z_value"), digits = 3) %>%
+  formatStyle(
+    'P_value',
+    color = styleInterval(c(0.001, 0.01, 0.05, 0.1), 
+                         c('darkgreen', 'green', 'orange', 'blue', 'black')),
+    fontWeight = styleInterval(0.05, c('bold', 'normal'))
+  )
+
+# Display Valued ERGM results - don't use formatRound for P_value
+datatable(model2_results, 
+          options = list(pageLength = 15, scrollX = TRUE),
+          caption = "ERGM Model 2 Results (Valued Model)") %>%
+  formatRound(columns = c("Estimate", "SE", "Z_value"), digits = 3) %>%
+  formatStyle(
+    'P_value',
+    color = styleInterval(c(0.001, 0.01, 0.05, 0.1), 
+                         c('darkgreen', 'green', 'orange', 'blue', 'black')),
+    fontWeight = styleInterval(0.05, c('bold', 'normal'))
+  )
+```
+
+## Model Comparison
+
+Let's compare our three models to see which one provides the best fit:
+
+```{r model_comparison}
+# Create a model comparison table
+model_comparison <- data.frame(
+  Model = c("Model 1 (Binary ERGM)", "Model 2 (Valued ERGM)"),
+  AIC = c(AIC(model_binary), AIC(model_valued)),
+  BIC = c(BIC(model_binary), BIC(model_valued)),
+  LogLik = c(logLik(model_binary), logLik(model_valued))
+)
+
+# Find the minimum values for highlighting
+best_aic <- min(model_comparison$AIC, na.rm = TRUE)
+best_bic <- min(model_comparison$BIC, na.rm = TRUE)
+best_loglik <- max(model_comparison$LogLik, na.rm = TRUE)
+
+# Display the model comparison table with proper highlights
+datatable(model_comparison, 
+          options = list(dom = 't'),
+          caption = "Model Comparison: Binary vs. Valued ERGM") %>%
+  formatRound(columns = c("AIC", "BIC", "LogLik"), digits = 2) %>%
+  formatStyle(
+    'AIC',
+    backgroundColor = styleEqual(best_aic, 'lightgreen'),
+    fontWeight = styleEqual(best_aic, 'bold')
+  ) %>%
+  formatStyle(
+    'BIC',
+    backgroundColor = styleEqual(best_bic, 'lightblue'),
+    fontWeight = styleEqual(best_bic, 'bold')
+  ) %>%
+  formatStyle(
+    'LogLik',
+    backgroundColor = styleEqual(best_loglik, 'lightyellow'),
+    fontWeight = styleEqual(best_loglik, 'bold')
+  )
+
+
+```
+
+## Coefficient Visualization {.tabset}
+
+Let's visualize the coefficients from our full model to better understand their importance:
+
+### Binary ERGM
+
+```{r coef_plot_binary_color, fig.height=8, fig.width=10}
+coef_df_binary <- model1_results
+coef_df_binary$Term <- gsub("nodefactor.home_project.", "Project: ", coef_df_binary$Term)
+coef_df_binary$Hypothesis <- ifelse(
+  coef_df_binary$Term == "absdiff.avg_bot_ratio", "H1: Bot exposure similarity",
+  ifelse(coef_df_binary$Term == "nodeocov.avg_bot_ratio", "H2: Outgoing ties",
+  ifelse(coef_df_binary$Term == "nodeicov.avg_bot_ratio", "H3: Incoming ties", "Control"))
+)
+plot_binary <- coef_df_binary[!grepl("Project: ", coef_df_binary$Term) |
+                                (abs(coef_df_binary$Estimate) > 0.5 & grepl("Project: ", coef_df_binary$Term)), ]
+plot_binary$Term <- factor(plot_binary$Term, levels = rev(unique(plot_binary$Term)))
+
+p_binary <- ggplot(plot_binary, aes(x = Term, y = Estimate, color = Hypothesis)) +
+  geom_point(size = 4) +
+  geom_errorbar(aes(ymin = Estimate - 1.96 * SE, ymax = Estimate + 1.96 * SE), width = 0.3) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray60") +
+  coord_flip() +
+  labs(title = "Binary ERGM Coefficient Estimates",
+       subtitle = "95% confidence intervals",
+       x = "", y = "Estimate") +
+  scale_color_manual(values = c("H1: Bot exposure similarity" = "#E41A1C",
+                                "H2: Outgoing ties" = "#377EB8",
+                                "H3: Incoming ties" = "#4DAF4A",
+                                "Control" = "gray50")) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "top", legend.title = element_blank())
+
+ggplotly(p_binary)
+```
+
+---
+
+### Valued ERGM
+
+```{r coef_plot_valued_color_fixed, fig.height=8, fig.width=10}
+coef_df_valued <- model2_results
+coef_df_valued$Term <- gsub("nodefactor.home_project.", "Project: ", coef_df_valued$Term)
+
+coef_df_valued$Hypothesis <- ifelse(
+  coef_df_valued$Term == "absdiff.sum.avg_bot_ratio", "H1: Bot exposure similarity",
+  ifelse(coef_df_valued$Term == "nodeocov.sum.avg_bot_ratio", "H2: Outgoing ties",
+  ifelse(coef_df_valued$Term == "nodeicov.sum.avg_bot_ratio", "H3: Incoming ties", "Control"))
+)
+
+plot_valued <- coef_df_valued[!grepl("Project: ", coef_df_valued$Term) |
+                               (abs(coef_df_valued$Estimate) > 0.5 & grepl("Project: ", coef_df_valued$Term)), ]
+plot_valued$Term <- factor(plot_valued$Term, levels = rev(unique(plot_valued$Term)))
+
+p_valued <- ggplot(plot_valued, aes(x = Term, y = Estimate, color = Hypothesis)) +
+  geom_point(size = 4) +
+  geom_errorbar(aes(ymin = Estimate - 1.96 * SE, ymax = Estimate + 1.96 * SE), width = 0.3) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray60") +
+  coord_flip() +
+  labs(title = "Valued ERGM Coefficient Estimates",
+       subtitle = "95% confidence intervals",
+       x = "", y = "Estimate") +
+  scale_color_manual(values = c("H1: Bot exposure similarity" = "#E41A1C",
+                                "H2: Outgoing ties" = "#377EB8",
+                                "H3: Incoming ties" = "#4DAF4A",
+                                "Control" = "gray50")) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "top", legend.title = element_blank())
+
+ggplotly(p_valued)
+```
+
+
+
+## Model Diagnostics
+
+Let's check the goodness-of-fit of our final model:
+
+```{r gof, fig.height=8, fig.width=12}
+# GOF for Binary ERGM
+gof_binary <- gof(model_binary)
+
+# Plot GOF for Binary ERGM
+plot(gof_binary, main = "Goodness-of-Fit for Binary ERGM")
+
+# GOF for Valued ERGM (not fully supported)
+cat("Note: GOF for Valued ERGM is not supported by ergm::gof(). Only Binary ERGM GOF is shown.\n")
+
+```
+
+
+# Interpretation and Conclusions
+
+Based on our ERGM analysis, we've identified several key findings about how bots influence developer cross-project participation in open source issue resolution:
+
+## Key Findings
+
+1. **Bot Exposure Similarity (H1)**: Developers with similar levels of bot exposure in their home projects are indeed more likely to form cross-project collaboration ties. This supports our hypothesis about shared communication norms and expectations established through similar bot interactions.
+
+2. **Bot Exposure and Outgoing Ties (H2)**: Developers with higher bot exposure in their home projects are more likely to initiate ties with developers in other projects. This suggests that the cognitive offloading provided by bots creates bandwidth for external outreach.
+
+3. **Bot Exposure and Incoming Ties (H3)**: Developers with higher bot exposure also receive more incoming ties from developers outside their home projects. This indicates that bot-mediated work environments enhance developer visibility and accessibility.
+
+## Limitations and Future Research
+
+Our study has several limitations that suggest directions for future research:
+
+1. **Temporal Dynamics**: Our cross-sectional approach doesn't capture the evolution of bot adoption and network formation over time. Future studies could employ longitudinal analyses to address potential reverse causality concerns.
+
+2. **Bot Types**: Different types of bots with varying decision-making capabilities may have distinct network effects. More detailed categorization of bot functionalities could yield more nuanced insights.
+
+3. **Generalizability**: Our focus on Apache projects may limit the generalizability of findings to other open source communities with different governance structures.

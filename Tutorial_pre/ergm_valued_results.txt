@@ -1,0 +1,29 @@
+Valued ERGM Results (Poisson-reference)
+
+Call:
+ergm::ergm(formula = net_ergm ~ sum + mutual + absdiff("avg_bot_ratio") + 
+    absdiff("project_count") + nodeicov("avg_bot_ratio") + nodeocov("avg_bot_ratio"), 
+    response = "weight", reference = ~Poisson, control = ergm::control.ergm(MCMLE.maxit = 25, 
+        MCMC.samplesize = 2500, MCMC.burnin = 2500))
+
+Monte Carlo Maximum Likelihood Results:
+
+                           Estimate Std. Error MCMC %  z value Pr(>|z|)    
+sum                        -5.89937    0.05002      0 -117.932   <1e-04 ***
+mutual.min                 -0.66034    0.34070      0   -1.938   0.0526 .  
+absdiff.sum.avg_bot_ratio  -0.96897    0.07040      0  -13.765   <1e-04 ***
+absdiff.sum.project_count   1.05378    0.02522      0   41.782   <1e-04 ***
+nodeicov.sum.avg_bot_ratio  0.25014    0.06015      0    4.158   <1e-04 ***
+nodeocov.sum.avg_bot_ratio  0.14253    0.05868      0    2.429   0.0151 *  
+---
+Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+
+     Null Deviance:       0  on 445556  degrees of freedom
+ Residual Deviance: -848176  on 445550  degrees of freedom
+ 
+Note that the null model likelihood and deviance are defined to be 0.
+This means that all likelihood-based inference (LRT, Analysis of
+Deviance, AIC, BIC, etc.) is only valid between models with the same
+reference distribution and constraints.
+
+AIC: -848164  BIC: -848098  (Smaller is better. MC Std. Err. = 31163)
